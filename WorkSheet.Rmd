@@ -84,17 +84,20 @@ remove_id <- what_to_remove %>% select(c("answer_id","remove")) %>% filter(remov
 `%notin%` <- Negate(`%in%`)
 
 # Costed around 4k rows (painful NGL, if you can come up with how to later clean up comparison pairs, it would save around 2k, i guess)
-data_set_full <- data_set_full %>% filter(answer_id %notin% remove_id) %>% rename(Subj_sex = Demography2, Subj_gender = Demography3)
+data_set_full <- data_set_full %>% filter(answer_id %notin% remove_id) %>% rename(Subj_sex = Demography2, Subj_gender = Demography3, Age = Q21)
 
 ```
 
 
 ```{r mlogit}
-data <- data_set_full %>% select(-c(Choice,url,filename, Demography4, Demography5)) %>% distinct(.keep_all = TRUE) %>% arrange(ResponseId,answer_id,Choice_n)
+data <- data_set_full %>% select(-c(Choice,url,filename, Demography4, Demography5)) %>% distinct(.keep_all = TRUE) %>% arrange(ResponseId,answer_id,Choice_n,Q_n)
 
+# Rearrange_data
+data <-  data %>% relocate(c("answer_id","Choice_n","Selected"), .after = ResponseId)
 # Replace answer_id with question_n
+data <- data %>% group_by(ResponseId) %>% mutate(Quest_n = rep(1:(n()/3), times = 1, length.out = NA, each = 3)) %>% select(-answer_id) %>% relocate(Quest_n, .before = Choice_n)
 
-
+data
 ```
 
 ## Including Plots
