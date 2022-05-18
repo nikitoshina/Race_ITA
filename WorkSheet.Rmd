@@ -20,6 +20,34 @@ itadata <- read.csv("data/fairface-ita.csv", stringsAsFactors = F, header = F,co
 image_panel <- read.csv("data/image_panel.csv", header = F, col.names = c("V1","V2","V3"))
 
 ```
+```{r education age + some demographics, echo=FALSE}
+ResponseID <- survey_clean %>% select(ResponseId)
+edu_age_image_demo <- survey_clean[,-seq(1,which(colnames(survey_clean)=="Q29"))] %>% bind_cols(ResponseID)                               
+image <- edu_age_image_demo %>% select(starts_with("image")) %>% bind_cols(ResponseID) 
+edu_age_demo <- edu_age_image_demo %>% select(-starts_with("image")) 
+edu_age <- edu_age_demo %>% select(starts_with("q")) %>% bind_cols(ResponseID)
+
+# wtf is this "q6MnthSal6" 
+edu_age_long <- edu_age %>% pivot_longer(-ResponseId)%>% mutate(alt_n = str_extract(name, ".$")) %>% mutate(question_number = str_remove_all(name,"MnthSal|pol_idea|polexp|experience|ed|age|exp")%>%str_remove(".$")%>%str_remove("^.") %>% as.numeric()) %>% 
+mutate(Alt_demo = case_when(
+ name %>% str_detect("MnthSal") == T ~ "Monthly_salary",
+ name %>% str_detect("pol_idea") == T ~ "Political_ideology",
+ name %>% str_detect("polexp") == T ~ "Political_experience",
+ name %>% str_detect("exp") == T ~ "Experience",
+ name %>% str_detect("ed") == T ~ "Education",
+ name %>% str_detect("age") == T ~ "Age")) %>% 
+mutate(question_number = case_when(
+ Alt_demo == "Political_experience" ~ question_number + 8,
+ Alt_demo == "Political_ideology" ~ question_number + 8,
+ Alt_demo %notin% c("Political_experience","Political_ideology") ~ question_number)) %>%
+# wtf is this "q6MnthSal6" 
+filter(alt_n != 6)
+
+data_alt_demo <- edu_age_long %>% select(-name) %>% pivot_wider(names_from = Alt_demo, values_from = value) %>% select(-c("Political_experience","Political_ideology")) %>% mutate(alt_n = as.numeric(alt_n))
+
+demo <- edu_age_demo %>% select(-starts_with("q")) 
+demo <- demo %>% select(-c("groupID","Create.New.Field.or.Choose.From.Dropdown...","groupID","studyID","researcherID","groupSize","numStages","participantRole","timeOutLog","roles","botMatch","total", "offer","decision","sendStage","getStage","defaultData","getData","saveData","randomPercent","sendData","payoff")) %>% rename(Subj_color = General1, Phone_n = General2)
+```
 
 ```{r}
 #Remove all rows without consent, Remove Survey Previews
@@ -38,7 +66,7 @@ survey_clean <- survey_clean %>% mutate(across(everything(), ~na_if(.,"")))
 # which(colnames(survey_clean)=="Q24") #29
 meta_and_demographics <- survey_clean[,seq(1,which(colnames(survey_clean)=="Demography5"))]
 
-demography <- survey_clean %>% select(ResponseId, Q21, starts_with("Demography"))
+demography <- survey_clean %>% select(ResponseId, Q21, starts_with("Demography")) %>% left_join(demo, by = "ResponseId")
 #which(colnames(survey_clean)=="Q21") #24
 meta_data <- survey_clean[,seq(1,which(colnames(survey_clean)=="X1_Type"))]                                
 #survey_clean %>% anti_join(a, by = "ResponseId") %>% mutate(across(everything(), ~na_if(.,""))) %>%is.na() %>% colSums() == 55 %>% sort()
@@ -65,17 +93,19 @@ image_info <- imagefilenames %>% distinct() %>% left_join(image_panel_long, by =
 data_set <- answers %>% left_join(image_info, by = "Q_n")
 
 # Show the one picked
-data_set <- data_set %>% mutate(Selected = as.double(Choice_n == Choice))
-data_set_full <- data_set %>% left_join(demography, by = "ResponseId")
+data_set <- data_set %>% mutate(Selected = as.numeric(Choice_n == Choice))
+
+# Attach other tables
+data_set_full <-  data_set %>% group_by(ResponseId) %>% mutate(question_number = rep(1:(n()/3), times = 1, length.out = NA, each = 3)) %>% left_join(data_alt_demo, by = c("ResponseId" = "ResponseId","question_number" = "question_number","Choice_n" = "alt_n")) %>% left_join(demography, by = "ResponseId") %>% ungroup()
 
 # Clean up same sex marriage questions
-what_to_remove <- data_set_full %>% select(answer_id, Q_n, Type, Gender, Choice_n, Demography2, Demography3) %>% 
+what_to_remove <- data_set_full %>% select(answer_id, Q_n, Type, Gender, Choice_n, Demography2, Demography3) %>%
 pivot_wider(names_from = Choice_n, values_from = Gender) %>% 
   mutate(same = (Demography2 == `2`) + (Demography2 == `3`) + (Demography2 == `1`)) %>% 
   mutate(remove = 
            ((same > 0 & Demography3 == "Straight or heterosexual")|
            (same < 3 & Demography3 %in% c("Queer","Gay or homosexual","Lesbian"))|
-           (Demography3 %in% c("Not listed, please specify","Bisexual","Asexual","NA")))&
+           (Demography3 %in% c("Not listed, please specify","Bisexual","Asexual","NA"))) &
            Type == "Marriage")
 
 remove_id <- what_to_remove %>% select(c("answer_id","remove")) %>% filter(remove == T) %>% pull(answer_id)
@@ -84,7 +114,7 @@ remove_id <- what_to_remove %>% select(c("answer_id","remove")) %>% filter(remov
 `%notin%` <- Negate(`%in%`)
 
 # Costed around 4k rows (painful NGL, if you can come up with how to later clean up comparison pairs, it would save around 2k, i guess)
-data_set_full <- data_set_full %>% filter(answer_id %notin% remove_id) %>% rename(Subj_sex = Demography2, Subj_gender = Demography3, Age = Q21)
+data_set_full <- data_set_full %>% filter(answer_id %notin% remove_id) %>% rename(Subj_sex = Demography2, Subj_gender = Demography3, Subj_age = Q21)
 
 ```
 
@@ -95,7 +125,7 @@ data <- data_set_full %>% select(-c(Choice,url,filename, Demography4, Demography
 # Rearrange_data
 data <-  data %>% relocate(c("answer_id","Choice_n","Selected"), .after = ResponseId)
 # Replace answer_id with question_n
-data <- data %>% group_by(ResponseId) %>% mutate(Quest_n = rep(1:(n()/3), times = 1, length.out = NA, each = 3)) %>% select(-answer_id) %>% relocate(Quest_n, .before = Choice_n)
+data <- data %>% group_by(ResponseId) %>% mutate(Quest_n = rep(1:(n()/3), times = 1, length.out = NA, each = 3)) %>% select(-c("answer_id","question_number")) %>% relocate(Quest_n, .before = Choice_n) %>%
 
 data
 ```
@@ -104,8 +134,6 @@ data
 
 You can also embed plots, for example:
 
-```{r pressure, echo=FALSE}
-plot(pressure)
-```
+
 
 Note that the `echo = FALSE` parameter was added to the code chunk to prevent printing of the R code that generated the plot.
