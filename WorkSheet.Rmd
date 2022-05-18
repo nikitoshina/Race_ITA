@@ -123,9 +123,32 @@ data_set_full <- data_set_full %>% filter(answer_id %notin% remove_id) %>% renam
 data <- data_set_full %>% select(-c(Choice,url,filename, Demography4, Demography5)) %>% distinct(.keep_all = TRUE) %>% arrange(ResponseId,answer_id,Choice_n,Q_n)
 
 # Rearrange_data
-data <-  data %>% relocate(c("answer_id","Choice_n","Selected"), .after = ResponseId)
+data <- data %>% relocate(c("answer_id","Choice_n","Selected"), .after = ResponseId)
+
 # Replace answer_id with question_n
-data <- data %>% group_by(ResponseId) %>% mutate(Quest_n = rep(1:(n()/3), times = 1, length.out = NA, each = 3)) %>% select(-c("answer_id","question_number")) %>% relocate(Quest_n, .before = Choice_n) %>%
+data <- data %>% group_by(ResponseId) %>% mutate(Quest_n = rep(1:(n()/3), times = 1, length.out = NA, each = 3)) %>% select(-c("answer_id","question_number","Q_n")) %>% relocate(Quest_n, .before = Choice_n) %>% ungroup()
+
+# Change data types
+data <- data %>% mutate(across(c("ResponseId","Type","Gender","Education","Subj_age","Subj_sex","Subj_gender","Subj_color","participantID"), as.factor))%>% mutate(across(c("Age","Phone_n","Experience","Monthly_salary"), as.numeric))
+
+library(mlogit)
+library(dfidx)
+data_maneg_md <- data %>% filter(Type == "Management") %>% mlogit.data(., choice = "Selected", shape="long",  alt.var = "Choice_n", id.var = c("ResponseId"))
+manag_m <- mlogit(Selected ~ 0 + ita + Age + Gender + Experience + Monthly_salary + Education , data = data_maneg_md)
+summary(manag_m)
+
+# Marriage
+data_mar_md <- data %>% filter(Type == "Marriage", Subj_sex == "Man") %>% drop_na(Age) %>% mlogit.data(., choice = "Selected", shape="long",  alt.var = "Choice_n", id.var = c("ResponseId"))
+mar_m <- mlogit(Selected ~ 0 + ita + Age + Education , data = data_mar_md)
+summary(mar_m)
+
+# No experience Politics
+data_polit_md <- data %>% filter(Type == "Politics") %>% drop_na(Monthly_salary) %>% mlogit.data(., choice = "Selected", shape="long",  alt.var = "Choice_n", id.var = c("ResponseId"))
+polit_m <- mlogit(Selected ~ 0 + ita + Age + Gender + Monthly_salary + Education , data = data_polit_md)
+summary(polit_m)
+
+# plot the model
+plot(choc_m6)
 
 data
 ```
