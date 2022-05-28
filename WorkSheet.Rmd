@@ -22,7 +22,7 @@ image_panel <- read.csv("data/image_panel.csv", header = F, col.names = c("V1","
 ```
 ```{r education age + some demographics, echo=FALSE}
 ResponseID <- survey_clean %>% select(ResponseId)
-edu_age_image_demo <- survey_clean[,-seq(1,which(colnames(survey_clean)=="Q29"))] %>% bind_cols(ResponseID)                               
+edu_age_image_demo <- survey_clean[,-seq(1,which(colnames(survey_clean)=="Q29"))] %>% bind_cols(ResponseID)                
 image <- edu_age_image_demo %>% select(starts_with("image")) %>% bind_cols(ResponseID) 
 edu_age_demo <- edu_age_image_demo %>% select(-starts_with("image")) 
 edu_age <- edu_age_demo %>% select(starts_with("q")) %>% bind_cols(ResponseID)
@@ -68,14 +68,14 @@ meta_and_demographics <- survey_clean[,seq(1,which(colnames(survey_clean)=="Demo
 
 demography <- survey_clean %>% select(ResponseId, Q21, starts_with("Demography")) %>% left_join(demo, by = "ResponseId")
 #which(colnames(survey_clean)=="Q21") #24
-meta_data <- survey_clean[,seq(1,which(colnames(survey_clean)=="X1_Type"))]                                
+meta_data <- survey_clean[,seq(1,which(colnames(survey_clean)=="X1_Type"))]                
 #survey_clean %>% anti_join(a, by = "ResponseId") %>% mutate(across(everything(), ~na_if(.,""))) %>%is.na() %>% colSums() == 55 %>% sort()
 
 # Create Table with Image Information
 # !!!! Assumed each column is continuation of a previous one !!!!
 # image_panel_long <- image_panel %>% select(url = V1) %>% 
-#   bind_rows(image_panel %>% select(url = V2),
-#             image_panel %>% select(url = V3)) %>%
+#  bind_rows(image_panel %>% select(url = V2),
+#       image_panel %>% select(url = V3)) %>%
 # mutate(Q_n = row_number())
 # !!! Assumed each column is a choice
 image_panel_long <- image_panel %>% mutate(Q_n = row_number()) %>% pivot_longer(-Q_n, names_to = "Choice_n", values_to = "url") %>% mutate(Choice_n = as.double(str_sub(Choice_n, start=-1)))
@@ -85,8 +85,8 @@ ita_data_clean <- itadata %>% mutate(id = str_remove_all(id, pattern = "train/")
 
 # Merge them all together #There was a duplicate in imagefilenames kinda ruined stuff a bit
 image_info <- imagefilenames %>% distinct() %>% left_join(image_panel_long, by = "url") %>% left_join(ita_data_clean, by = c("filename" = "id")) %>% mutate(Gender = case_when(
-  Gender == "Male" ~ "Man",
-  Gender == "Female" ~ "Woman"
+ Gender == "Male" ~ "Man",
+ Gender == "Female" ~ "Woman"
 ))
 
 # Build the complete DS
@@ -96,17 +96,17 @@ data_set <- answers %>% left_join(image_info, by = "Q_n")
 data_set <- data_set %>% mutate(Selected = as.numeric(Choice_n == Choice))
 
 # Attach other tables
-data_set_full <-  data_set %>% group_by(ResponseId) %>% mutate(question_number = rep(1:(n()/3), times = 1, length.out = NA, each = 3)) %>% left_join(data_alt_demo, by = c("ResponseId" = "ResponseId","question_number" = "question_number","Choice_n" = "alt_n")) %>% left_join(demography, by = "ResponseId") %>% ungroup()
+data_set_full <- data_set %>% group_by(ResponseId) %>% mutate(question_number = rep(1:(n()/3), times = 1, length.out = NA, each = 3)) %>% left_join(data_alt_demo, by = c("ResponseId" = "ResponseId","question_number" = "question_number","Choice_n" = "alt_n")) %>% left_join(demography, by = "ResponseId") %>% ungroup()
 
 # Clean up same sex marriage questions
 what_to_remove <- data_set_full %>% select(answer_id, Q_n, Type, Gender, Choice_n, Demography2, Demography3) %>%
 pivot_wider(names_from = Choice_n, values_from = Gender) %>% 
-  mutate(same = (Demography2 == `2`) + (Demography2 == `3`) + (Demography2 == `1`)) %>% 
-  mutate(remove = 
-           ((same > 0 & Demography3 == "Straight or heterosexual")|
-           (same < 3 & Demography3 %in% c("Queer","Gay or homosexual","Lesbian"))|
-           (Demography3 %in% c("Not listed, please specify","Bisexual","Asexual","NA"))) &
-           Type == "Marriage")
+ mutate(same = (Demography2 == `2`) + (Demography2 == `3`) + (Demography2 == `1`)) %>% 
+ mutate(remove = 
+      ((same > 0 & Demography3 == "Straight or heterosexual")|
+      (same < 3 & Demography3 %in% c("Queer","Gay or homosexual","Lesbian"))|
+      (Demography3 %in% c("Not listed, please specify","Bisexual","Asexual","NA"))) &
+      Type == "Marriage")
 
 remove_id <- what_to_remove %>% select(c("answer_id","remove")) %>% filter(remove == T) %>% pull(answer_id)
 
@@ -129,28 +129,102 @@ data <- data %>% relocate(c("answer_id","Choice_n","Selected"), .after = Respons
 data <- data %>% group_by(ResponseId) %>% mutate(Quest_n = rep(1:(n()/3), times = 1, length.out = NA, each = 3)) %>% select(-c("answer_id","question_number","Q_n")) %>% relocate(Quest_n, .before = Choice_n) %>% ungroup()
 
 # Change data types
-data <- data %>% mutate(across(c("ResponseId","Type","Gender","Education","Subj_age","Subj_sex","Subj_gender","Subj_color","participantID"), as.factor))%>% mutate(across(c("Age","Phone_n","Experience","Monthly_salary"), as.numeric))
+data <- data %>% mutate(across(c("ResponseId","Type","Gender","Education","Subj_age","Subj_sex","Subj_gender","Subj_color","participantID"), as.factor))%>% mutate(across(c("Age","Phone_n","Experience","Monthly_salary"), as.numeric)) %>% drop_na(Age, Subj_gender, Subj_color)
 
 library(mlogit)
 library(dfidx)
-data_maneg_md <- data %>% filter(Type == "Management") %>% mlogit.data(., choice = "Selected", shape="long",  alt.var = "Choice_n", id.var = c("ResponseId"))
-manag_m <- mlogit(Selected ~ 0 + ita + Age + Gender + Experience + Monthly_salary + Education , data = data_maneg_md)
+data_maneg_md <- data %>% filter(Type == "Management")%>% filter( Subj_sex == "Man") %>% mlogit.data(., choice = "Selected", shape="long", alt.var = "Choice_n", id.var = c("ResponseId"))
+manag_m2 <- mlogit(Selected ~ 0 + ita + Age + Gender + Experience + Monthly_salary, data = data_maneg_md)
+manag_m <- mlogit(Selected ~ 0 + ita + Age + Gender + Experience + Monthly_salary + Education, data = data_maneg_md)
+round(lrtest(manag_m, manag_m2)$`Pr(>Chisq)`[2],3)
 summary(manag_m)
-
+manag_m %>% tidy() %>% select(term, estimate)
 # Marriage
-data_mar_md <- data %>% filter(Type == "Marriage", Subj_sex == "Man") %>% drop_na(Age) %>% mlogit.data(., choice = "Selected", shape="long",  alt.var = "Choice_n", id.var = c("ResponseId"))
+data_mar_md <- data %>% filter(Type == "Marriage", Subj_sex == "Man") %>% drop_na(Age) %>% mlogit.data(., choice = "Selected", shape="long", alt.var = "Choice_n", id.var = c("ResponseId"))
 mar_m <- mlogit(Selected ~ 0 + ita + Age + Education , data = data_mar_md)
 summary(mar_m)
 
 # No experience Politics
-data_polit_md <- data %>% filter(Type == "Politics") %>% drop_na(Monthly_salary) %>% mlogit.data(., choice = "Selected", shape="long",  alt.var = "Choice_n", id.var = c("ResponseId"))
+data_polit_md <- data %>% filter(Type == "Politics") %>% drop_na(Monthly_salary) %>% mlogit.data(., choice = "Selected", shape="long", alt.var = "Choice_n", id.var = c("ResponseId"))
 polit_m <- mlogit(Selected ~ 0 + ita + Age + Gender + Monthly_salary + Education , data = data_polit_md)
 summary(polit_m)
 
 # plot the model
-plot(choc_m6)
+#plot(polit_m)
 
-data
+results_marr_all <- data %>% filter(Type == "Marriage") %>% group_by(Subj_gender, Subj_color, Subj_sex, Subj_age) %>% nest() %>% 
+mutate(n = map_dbl(data, ~ length(unique(.$participantID)))) %>% filter(n >10) %>% mutate(train = map(data, ~ mlogit.data(., choice = "Selected", shape="long", alt.var = "Choice_n", id.var = c("ResponseId")))) %>% mutate(model = map(train, ~mlogit(Selected ~ 0 + ita + Age + Education , data = .))) %>% mutate(sign = map(model, ~tidy(., p.value = T) %>% select(term, p.value, estimate) %>% mutate(p.value =  ifelse(round(p.value,3) == 0,round(p.value,3)+0.001,round(p.value,3))*sign(estimate)) %>% select(-estimate) %>% pivot_wider(values_from = p.value, names_from = term))) %>% unnest(sign) %>% 
+mutate(model_no_educ = map(train, ~mlogit(Selected ~ 0 + ita + Age, data = .)))%>%
+mutate(lr_education = map2_dbl(model, model_no_educ, ~round(lrtest(.x, .y)$`Pr(>Chisq)`[2],3))) %>%
+select(-c(train, model, model_no_educ, data)) %>% dplyr::arrange(Subj_sex, Subj_color, Subj_age) %>%
+select(-starts_with("Education"))
+
+results_marr_color <- data %>% filter(Type == "Marriage") %>% group_by(Subj_color) %>% nest() %>% 
+mutate(n = map_dbl(data, ~ length(unique(.$participantID)))) %>% filter(n >10) %>% mutate(train = map(data, ~ mlogit.data(., choice = "Selected", shape="long", alt.var = "Choice_n", id.var = c("ResponseId")))) %>% mutate(model = map(train, ~mlogit(Selected ~ 0 + ita + Age + Education , data = .))) %>% mutate(sign = map(model, ~tidy(., p.value = T) %>% select(term, p.value, estimate) %>% mutate(p.value =  ifelse(round(p.value,3) == 0,round(p.value,3)+0.001,round(p.value,3))*sign(estimate)) %>% select(-estimate) %>% pivot_wider(values_from = p.value, names_from = term))) %>% unnest(sign) %>% 
+mutate(model_no_educ = map(train, ~mlogit(Selected ~ 0 + ita + Age, data = .)))%>%
+mutate(lr_education = map2_dbl(model, model_no_educ, ~round(lrtest(.x, .y)$`Pr(>Chisq)`[2],3))) %>%
+select(-c(train, model, model_no_educ, data)) %>% dplyr::arrange( Subj_color) %>%
+select(-starts_with("Education"))
+
+results_marr_gender_sex <- data %>% filter(Type == "Marriage") %>% group_by(Subj_gender, Subj_sex) %>% nest() %>%
+mutate(n = map_dbl(data, ~ length(unique(.$participantID)))) %>% filter(n >10) %>% mutate(train = map(data, ~ mlogit.data(., choice = "Selected", shape="long", alt.var = "Choice_n", id.var = c("ResponseId")))) %>% mutate(model = map(train, ~mlogit(Selected ~ 0 + ita + Age + Education , data = .))) %>% mutate(sign = map(model, ~tidy(., p.value = T) %>% select(term, p.value, estimate) %>% mutate(p.value =  ifelse(round(p.value,3) == 0,round(p.value,3)+0.001,round(p.value,3))*sign(estimate)) %>% select(-estimate) %>% pivot_wider(values_from = p.value, names_from = term))) %>% unnest(sign) %>% 
+mutate(model_no_educ = map(train, ~mlogit(Selected ~ 0 + ita + Age, data = .)))%>%
+mutate(lr_education = map2_dbl(model, model_no_educ, ~round(lrtest(.x, .y)$`Pr(>Chisq)`[2],3))) %>%
+select(-c(train, model, model_no_educ, data)) %>%
+select(-starts_with("Education")) %>% arrange(desc(Subj_gender), Subj_sex)
+
+results_marr_age <- data %>% filter(Type == "Marriage") %>% group_by(Subj_age) %>% nest() %>% 
+mutate(n = map_dbl(data, ~ length(unique(.$participantID)))) %>% filter(n >10) %>% mutate(train = map(data, ~ mlogit.data(., choice = "Selected", shape="long", alt.var = "Choice_n", id.var = c("ResponseId")))) %>% mutate(model = map(train, ~mlogit(Selected ~ 0 + ita + Age + Education , data = .))) %>% 
+mutate(sign = map(model, ~tidy(., p.value = T) %>% select(term, p.value, estimate) %>% mutate(p.value =  ifelse(round(p.value,3) == 0,round(p.value,3)+0.001,round(p.value,3))*sign(estimate)) %>% select(-estimate) %>% pivot_wider(values_from = p.value, names_from = term))) %>%
+ unnest(sign) %>% 
+mutate(model_no_educ = map(train, ~mlogit(Selected ~ 0 + ita + Age, data = .)))%>%
+mutate(lr_education = map2_dbl(model, model_no_educ, ~round(lrtest(.x, .y)$`Pr(>Chisq)`[2],3))) %>%
+select(-c(train, model, model_no_educ, data)) %>%
+select(-starts_with("Education")) %>% arrange(desc(Subj_age))
+
+results_marr_all
+results_marr_color
+results_marr_gender_sex
+results_marr_age
+
+
+
+```
+```{r}
+######
+
+results_manage_all <- data %>% drop_na() %>%filter(Type == "Management") %>% group_by(Subj_gender, Subj_color, Subj_sex, Subj_age) %>% nest() %>% mutate(n = map_dbl(data, ~ length(unique(.$participantID)))) %>% filter(n >10) %>% mutate(train = map(data, ~ mlogit.data(., choice = "Selected", shape="long", alt.var = "Choice_n", id.var = c("ResponseId")))) %>% 
+mutate(model = map(train, ~mlogit(Selected ~ 0 + ita + Age + Gender + Experience + Monthly_salary + Education, data = .))) %>% mutate(sign = map(model, ~tidy(., p.value = T) %>% select(term, p.value, estimate) %>% mutate(p.value =  ifelse(round(p.value,3) == 0,round(p.value,3)+0.001,round(p.value,3))*sign(estimate)) %>% select(-estimate) %>% pivot_wider(values_from = p.value, names_from = term))) %>% unnest(sign) %>% 
+mutate(model_no_educ = map(train, ~mlogit(Selected ~ 0 + ita + Age + Gender + Experience + Monthly_salary, data = .)))%>%
+mutate(lr_education = map2_dbl(model, model_no_educ, ~round(lrtest(.x, .y)$`Pr(>Chisq)`[2],3))) %>%
+select(-c(train, model, model_no_educ, data)) %>%
+select(-starts_with("Education")) %>% dplyr::arrange(Subj_sex, Subj_color, Subj_age)
+
+results_manage_color <- data %>% drop_na() %>%filter(Type == "Management") %>% group_by(Subj_color) %>% nest() %>% mutate(n = map_dbl(data, ~ length(unique(.$participantID)))) %>% filter(n >10) %>% mutate(train = map(data, ~ mlogit.data(., choice = "Selected", shape="long", alt.var = "Choice_n", id.var = c("ResponseId")))) %>% 
+mutate(model = map(train, ~mlogit(Selected ~ 0 + ita + Age + Gender + Experience + Monthly_salary + Education, data = .))) %>% mutate(sign = map(model, ~tidy(., p.value = T) %>%select(term, p.value, estimate) %>% mutate(p.value =  ifelse(round(p.value,3) == 0,round(p.value,3)+0.001,round(p.value,3))*sign(estimate)) %>% select(-estimate) %>% pivot_wider(values_from = p.value, names_from = term))) %>% unnest(sign) %>% 
+mutate(model_no_educ = map(train, ~mlogit(Selected ~ 0 + ita + Age + Gender + Experience + Monthly_salary, data = .)))%>%
+mutate(lr_education = map2_dbl(model, model_no_educ, ~round(lrtest(.x, .y)$`Pr(>Chisq)`[2],3))) %>%
+select(-c(train, model, model_no_educ, data)) %>%
+select(-starts_with("Education")) %>% dplyr::arrange(Subj_color)
+
+results_manage_sex_gender <- data %>% drop_na() %>%filter(Type == "Management") %>% group_by(Subj_sex, Subj_gender) %>% nest() %>% mutate(n = map_dbl(data, ~ length(unique(.$participantID)))) %>% filter(n >10) %>% mutate(train = map(data, ~ mlogit.data(., choice = "Selected", shape="long", alt.var = "Choice_n", id.var = c("ResponseId")))) %>% 
+mutate(model = map(train, ~mlogit(Selected ~ 0 + ita + Age + Gender + Experience + Monthly_salary + Education, data = .))) %>% mutate(sign = map(model, ~tidy(., p.value = T) %>% select(term, p.value, estimate) %>% mutate(p.value =  ifelse(round(p.value,3) == 0,round(p.value,3)+0.001,round(p.value,3))*sign(estimate)) %>% select(-estimate) %>% pivot_wider(values_from = p.value, names_from = term))) %>% unnest(sign) %>% 
+mutate(model_no_educ = map(train, ~mlogit(Selected ~ 0 + ita + Age + Gender + Experience + Monthly_salary, data = .)))%>%
+mutate(lr_education = map2_dbl(model, model_no_educ, ~round(lrtest(.x, .y)$`Pr(>Chisq)`[2],3))) %>%
+select(-c(train, model, model_no_educ, data)) %>%
+select(-starts_with("Education")) %>% dplyr::arrange(Subj_sex, Subj_gender)
+
+results_manage_age <- data %>% drop_na() %>%filter(Type == "Management") %>% group_by(Subj_age) %>% nest() %>% mutate(n = map_dbl(data, ~ length(unique(.$participantID)))) %>% filter(n >10) %>% mutate(train = map(data, ~ mlogit.data(., choice = "Selected", shape="long", alt.var = "Choice_n", id.var = c("ResponseId")))) %>% 
+mutate(model = map(train, ~mlogit(Selected ~ 0 + ita + Age + Gender + Experience + Monthly_salary + Education, data = .))) %>% mutate(sign = map(model, ~tidy(., p.value = T) %>%select(term, p.value, estimate) %>% mutate(p.value = ifelse(round(p.value,3) == 0,round(p.value,3)+0.001,round(p.value,3))*sign(estimate)) %>% select(-estimate) %>% pivot_wider(values_from = p.value, names_from = term))) %>% unnest(sign) %>% 
+mutate(model_no_educ = map(train, ~mlogit(Selected ~ 0 + ita + Age + Gender + Experience + Monthly_salary, data = .)))%>%
+mutate(lr_education = map2_dbl(model, model_no_educ, ~round(lrtest(.x, .y)$`Pr(>Chisq)`[2],3))) %>%
+select(-c(train, model, model_no_educ, data)) %>%
+select(-starts_with("Education")) %>% dplyr::arrange(Subj_age)
+
+results_manage_all
+results_manage_color
+results_manage_sex_gender
+results_manage_age
 ```
 
 ## Including Plots
